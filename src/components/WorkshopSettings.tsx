@@ -31,9 +31,10 @@ import {
   Check,
   AlertTriangle,
   X,
+  Loader2,
 } from 'lucide-react';
-
-import { PaperSize, TableBorderStyle } from '../types';
+import { getSupabase } from '../lib/supabase';
+import { PaperSize, TableBorderStyle, WorkshopProfile } from '../types';
 
 interface WorkshopSettingsProps {
   onSavedGoToBilling?: () => void;
@@ -125,6 +126,7 @@ export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToB
   );
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Sync state if profile is populated from Supabase after initial render
   React.useEffect(() => {
@@ -162,32 +164,108 @@ export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToB
     setLogoUrl('');
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile({
-      name: name.trim(),
-      tagline: tagline.trim(),
-      ownerName: ownerName.trim(),
-      phone: phone.trim(),
-      alternatePhone: alternatePhone.trim(),
-      email: email.trim(),
-      address: address.trim(),
-      city: city.trim(),
-      gstin: gstin.toUpperCase().trim(),
-      defaultGstRate: Number(defaultGstRate) || 18,
-      upiId: upiId.trim(),
-      logoUrl: logoUrl.trim(),
-      defaultMechanicName: defaultMechanicName.trim(),
-      defaultGstApplied,
-      defaultPaperSize,
-      tableBorderStyle,
-      termsAndConditions: terms
-        .split('\n')
-        .map(t => t.trim())
-        .filter(Boolean),
-    });
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setIsSaving(true);
+    try {
+      const trimmedName = name.trim();
+      const trimmedOwnerName = ownerName.trim();
+      const trimmedPhone = phone.trim();
+
+      const updatedProfile: WorkshopProfile = {
+        name: trimmedName,
+        tagline: tagline.trim(),
+        ownerName: trimmedOwnerName,
+        phone: trimmedPhone,
+        alternatePhone: alternatePhone.trim(),
+        email: email.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        gstin: gstin.toUpperCase().trim(),
+        defaultGstRate: Number(defaultGstRate) || 18,
+        upiId: upiId.trim(),
+        logoUrl: logoUrl.trim(),
+        defaultMechanicName: defaultMechanicName.trim(),
+        defaultGstApplied,
+        defaultPaperSize,
+        tableBorderStyle,
+        termsAndConditions: terms
+          .split('\n')
+          .map(t => t.trim())
+          .filter(Boolean),
+      };
+
+      // 1. Update local storage and context state
+      await updateProfile(updatedProfile);
+
+      // 2. Call supabase.auth.updateUser() to update auth.users Display Name (via full_name) and Phone columns
+      const client = getSupabase();
+      if (client && user?.id) {
+        const targetDisplayName = (trimmedName && trimmedOwnerName && trimmedName !== trimmedOwnerName)
+          ? `${trimmedName} (${trimmedOwnerName})`
+          : (trimmedName || trimmedOwnerName || '');
+
+        let formattedPhone = trimmedPhone;
+        const rawDigits = formattedPhone.replace(/\D/g, '');
+        if (rawDigits.length === 10) {
+          formattedPhone = `+91${rawDigits}`;
+        } else if (rawDigits.length > 10 && !formattedPhone.startsWith('+')) {
+          formattedPhone = `+${rawDigits}`;
+        }
+
+        const authMetadata: Record<string, any> = {
+          full_name: targetDisplayName,
+          name: targetDisplayName,
+          display_name: targetDisplayName,
+          workshop_name: trimmedName,
+          phone: trimmedPhone,
+          phone_number: formattedPhone || trimmedPhone,
+        };
+        if (trimmedOwnerName) {
+          authMetadata.owner_name = trimmedOwnerName;
+        }
+
+        try {
+          if (formattedPhone) {
+            const { error: authErr } = await client.auth.updateUser({
+              phone: formattedPhone,
+              data: authMetadata,
+            });
+
+            if (authErr) {
+              console.warn('[WorkshopSettings] Phone column update note:', authErr.message);
+              // Fallback: If phone provider is disabled in Supabase, update user metadata only
+              await client.auth.updateUser({
+                data: authMetadata,
+              });
+            } else {
+              console.log('[WorkshopSettings] auth.updateUser updated phone & display_name');
+            }
+          } else {
+            await client.auth.updateUser({
+              data: authMetadata,
+            });
+            console.log('[WorkshopSettings] auth.updateUser updated display_name metadata');
+          }
+        } catch (authErr) {
+          console.warn('[WorkshopSettings] auth.updateUser exception fallback:', authErr);
+          try {
+            await client.auth.updateUser({
+              data: authMetadata,
+            });
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    } catch (err: any) {
+      console.error('Error saving workshop profile:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleExportData = () => {
@@ -950,10 +1028,20 @@ export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToB
         <div className="pt-4 border-t border-slate-200 flex justify-end">
           <button
             type="submit"
-            className="flex items-center gap-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold rounded-lg text-sm shadow-md transition"
+            disabled={isSaving}
+            className="flex items-center gap-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold rounded-lg text-sm shadow-md transition disabled:opacity-60 cursor-pointer"
           >
-            <Save className="w-4 h-4" />
-            <span>Save Workshop Settings</span>
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Saving Settings...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>Save Workshop Settings</span>
+              </>
+            )}
           </button>
         </div>
       </form>

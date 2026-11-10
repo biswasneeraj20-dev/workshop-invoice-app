@@ -45,7 +45,7 @@ interface WorkshopContextType {
   deleteSparePart: (id: string) => void;
   adjustPartStock: (id: string, delta: number) => void;
   // Profile
-  updateProfile: (updated: Partial<WorkshopProfile>) => void;
+  updateProfile: (updated: Partial<WorkshopProfile>) => Promise<void> | void;
   resetAllData: () => void;
   // Computed stats
   stats: {
@@ -380,14 +380,20 @@ export const WorkshopProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Profile actions
-  const updateProfile = (updated: Partial<WorkshopProfile>) => {
+  const updateProfile = async (updated: Partial<WorkshopProfile>) => {
+    let mergedProfile: WorkshopProfile = { ...profile, ...updated };
     setProfile(prev => {
-      const merged = { ...prev, ...updated };
-      if (user?.id) {
-        saveWorkshopProfileToSupabase(user.id, merged);
-      }
-      return merged;
+      mergedProfile = { ...prev, ...updated };
+      return mergedProfile;
     });
+    try {
+      localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(mergedProfile));
+    } catch {
+      // ignore
+    }
+    if (user?.id) {
+      await saveWorkshopProfileToSupabase(user.id, mergedProfile);
+    }
   };
 
   const resetAllData = () => {

@@ -707,12 +707,22 @@ export async function fetchUserProfile(
 
 export async function saveWorkshopProfileToSupabase(
   userId: string,
-  profile: { name: string; phone: string; address?: string; city?: string; gstin?: string; upiId?: string; logoUrl?: string }
+  profile: {
+    name: string;
+    phone: string;
+    address?: string;
+    city?: string;
+    gstin?: string;
+    upiId?: string;
+    logoUrl?: string;
+    ownerName?: string;
+  }
 ): Promise<void> {
   const client = getSupabase();
   if (!client || !userId) return;
 
   try {
+    // 1. Maintain public.users database record exactly as before (DO NOT TOUCH OR BREAK SIGNUP DATA)
     const updatePayload: any = {
       workshop_name: profile.name || '',
       phone: profile.phone || '',
@@ -723,9 +733,64 @@ export async function saveWorkshopProfileToSupabase(
     if (profile.upiId !== undefined) updatePayload.upi_id = profile.upiId;
     if (profile.logoUrl !== undefined) updatePayload.logo_url = profile.logoUrl;
 
-    const { error } = await client.from('users').update(updatePayload).eq('id', userId);
-    if (error) {
-      console.warn('[Supabase Profile] Save notice:', error.message);
+    const { error: dbError } = await client.from('users').update(updatePayload).eq('id', userId);
+    if (dbError) {
+      console.warn('[Supabase Profile] public.users save notice:', dbError.message);
+    }
+
+    // 2. Call supabase.auth.updateUser() to update auth.users Display Name (via full_name) and Phone columns
+    const targetDisplayName = (profile.name?.trim() && profile.ownerName?.trim() && profile.name.trim() !== profile.ownerName.trim())
+      ? `${profile.name.trim()} (${profile.ownerName.trim()})`
+      : (profile.name?.trim() || profile.ownerName?.trim() || '');
+
+    let formattedPhone = (profile.phone || '').trim();
+    const rawDigits = formattedPhone.replace(/\D/g, '');
+    if (rawDigits.length === 10) {
+      formattedPhone = `+91${rawDigits}`;
+    } else if (rawDigits.length > 10 && !formattedPhone.startsWith('+')) {
+      formattedPhone = `+${rawDigits}`;
+    }
+
+    const authMetadata: Record<string, any> = {
+      full_name: targetDisplayName,
+      name: targetDisplayName,
+      display_name: targetDisplayName,
+      workshop_name: (profile.name || '').trim(),
+      phone: (profile.phone || '').trim(),
+      phone_number: formattedPhone || (profile.phone || '').trim(),
+    };
+    if (profile.ownerName?.trim()) {
+      authMetadata.owner_name = profile.ownerName.trim();
+    }
+
+    try {
+      if (formattedPhone) {
+        const { error: authErr } = await client.auth.updateUser({
+          phone: formattedPhone,
+          data: authMetadata,
+        });
+
+        if (authErr) {
+          console.warn('[Supabase Auth updateUser] Phone column update note:', authErr.message);
+          // Fallback to update metadata only (in case phone SMS provider is disabled on Supabase)
+          await client.auth.updateUser({
+            data: authMetadata,
+          });
+        }
+      } else {
+        await client.auth.updateUser({
+          data: authMetadata,
+        });
+      }
+    } catch (authErr) {
+      console.warn('[Supabase Auth updateUser] Exception:', authErr);
+      try {
+        await client.auth.updateUser({
+          data: authMetadata,
+        });
+      } catch {
+        // ignore
+      }
     }
   } catch (err) {
     console.warn('[Supabase Profile] Exception saving workshop profile:', err);
