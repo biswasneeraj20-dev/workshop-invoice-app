@@ -32,12 +32,83 @@ import {
   AlertTriangle,
   X,
   Loader2,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 import { getSupabase } from '../lib/supabase';
 import { PaperSize, TableBorderStyle, WorkshopProfile } from '../types';
 
 interface WorkshopSettingsProps {
   onSavedGoToBilling?: () => void;
+}
+
+/**
+ * Format subscription end date and time nicely with day, date, time, and expiration status
+ */
+function formatSubscriptionEndDate(endDateString?: string | null) {
+  if (!endDateString || typeof endDateString !== 'string' || endDateString.trim() === '') {
+    return {
+      hasDate: false,
+      dateFormatted: 'Lifetime Validity',
+      timeFormatted: 'Unlimited Access',
+      dayFormatted: '',
+      fullText: 'Lifetime Validity (No Expiry)',
+      isExpired: false,
+      daysRemaining: null as number | null,
+    };
+  }
+
+  // Handle postgres space instead of T if needed (e.g. "2026-11-20 18:30:00+00")
+  const normalizedStr = endDateString.includes(' ') && !endDateString.includes('T')
+    ? endDateString.replace(' ', 'T')
+    : endDateString;
+
+  const dateObj = new Date(normalizedStr);
+  if (isNaN(dateObj.getTime())) {
+    return {
+      hasDate: false,
+      dateFormatted: endDateString,
+      timeFormatted: '',
+      dayFormatted: '',
+      fullText: endDateString,
+      isExpired: false,
+      daysRemaining: null as number | null,
+    };
+  }
+
+  const now = new Date();
+  const isExpired = dateObj.getTime() < now.getTime();
+  const diffMs = dateObj.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  // Date format: e.g. "10 Nov 2026"
+  const dateFormatted = dateObj.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  // Short day name: e.g. "Tue"
+  const dayFormatted = dateObj.toLocaleDateString('en-IN', {
+    weekday: 'short',
+  });
+
+  // Time format: e.g. "08:41 PM"
+  const timeFormatted = dateObj.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return {
+    hasDate: true,
+    dateFormatted,
+    dayFormatted,
+    timeFormatted,
+    fullText: `${dayFormatted}, ${dateFormatted} at ${timeFormatted}`,
+    isExpired,
+    daysRemaining: diffDays,
+  };
 }
 
 export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToBilling }) => {
@@ -52,6 +123,8 @@ export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToB
     logout,
     deleteAccount,
   } = useAuth();
+
+  const expiryInfo = formatSubscriptionEndDate(authProfile?.subscription_end_date);
 
   const [copiedUserId, setCopiedUserId] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -398,9 +471,29 @@ export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToB
                     {authProfile?.subscription_plan?.trim() ? `${authProfile.subscription_plan} (Inactive)` : 'Inactive / Locked'}
                   </span>
                 )}
+                {expiryInfo.hasDate ? (
+                  <span
+                    className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold border ${
+                      expiryInfo.isExpired
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : 'bg-amber-50 text-amber-900 border-amber-200'
+                    }`}
+                  >
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    <span>
+                      {expiryInfo.isExpired ? 'Expired On: ' : 'Plan End: '}
+                      {expiryInfo.dateFormatted} at {expiryInfo.timeFormatted}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-[10px] font-bold uppercase tracking-wider">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    Lifetime
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Current active session details, registered User ID, and account logout option.
+                Current active session details, registered User ID, and account subscription validity.
               </p>
             </div>
           </div>
@@ -440,7 +533,7 @@ export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToB
 
         {/* User Details Grid */}
         {user ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-4">
             {/* User Email Box */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-start gap-3">
               <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
@@ -516,6 +609,88 @@ export const WorkshopSettings: React.FC<WorkshopSettingsProps> = ({ onSavedGoToB
                     </span>
                   )}
                 </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Bills Created: <span className="font-bold text-slate-700">{authProfile?.bills_created_count || 0}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Subscription End Date & Time Box (subscription_end_date) */}
+            <div
+              className={`border rounded-xl p-3.5 flex items-start gap-3 transition-colors ${
+                expiryInfo.isExpired
+                  ? 'bg-rose-50/70 border-rose-200'
+                  : expiryInfo.hasDate
+                  ? 'bg-amber-50/50 border-amber-200'
+                  : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <div
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5 shadow-xs ${
+                  expiryInfo.isExpired
+                    ? 'bg-rose-100 text-rose-700'
+                    : expiryInfo.hasDate
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1 mb-0.5">
+                  <span className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                    Plan End Date & Time
+                  </span>
+                  {expiryInfo.hasDate ? (
+                    expiryInfo.isExpired ? (
+                      <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 border border-rose-200 rounded text-[9px] font-extrabold uppercase shrink-0">
+                        Expired
+                      </span>
+                    ) : expiryInfo.daysRemaining !== null ? (
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 rounded text-[9px] font-extrabold uppercase shrink-0">
+                        {expiryInfo.daysRemaining === 0
+                          ? 'Expires Today'
+                          : expiryInfo.daysRemaining === 1
+                          ? '1 day left'
+                          : `${expiryInfo.daysRemaining} days left`}
+                      </span>
+                    ) : null
+                  ) : (
+                    <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[9px] font-extrabold uppercase shrink-0">
+                      Lifetime
+                    </span>
+                  )}
+                </div>
+
+                {expiryInfo.hasDate ? (
+                  <div className="mt-1 space-y-1">
+                    {/* Formatted Date */}
+                    <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-900">
+                      <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>{expiryInfo.dateFormatted}</span>
+                      {expiryInfo.dayFormatted && (
+                        <span className="text-[11px] font-semibold text-slate-500">
+                          ({expiryInfo.dayFormatted})
+                        </span>
+                      )}
+                    </div>
+                    {/* Formatted Time */}
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                      <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span>Time: {expiryInfo.timeFormatted}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1">
+                    <p className="text-xs sm:text-sm font-bold text-emerald-700 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Lifetime Validity</span>
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      No expiry date · Permanent access
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
