@@ -1,0 +1,8 @@
+{
+  "name": "Remix Auto Workshop Invoice Maker",
+  "description": "Car workshop billing system with pre-made service labor charges, spare parts inventory management, GST invoice generation, and WhatsApp sharing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
