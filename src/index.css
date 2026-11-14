@@ -13,6 +13,26 @@
   }
 }
 
+/* Hide externally injected Netlify Deploy Preview Drawer / Powered by Netlify badges */
+netlify-drawer,
+#netlify-drawer,
+.netlify-drawer,
+[data-netlify-drawer],
+[data-netlify-deploy-preview],
+[id^="netlify-"],
+iframe[src*="netlify.com"],
+iframe[src*="app.netlify.com"],
+iframe[src*="/.netlify/"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+}
+
 /* SCREEN DISPLAY STYLING - EXACT A4 & A5 PAPER PORTRAIT RATIOS */
 .a4-page-sheet {
   box-sizing: border-box;
@@ -64,10 +84,36 @@
     overflow: visible !important;
   }
 
-  /* Completely remove non-printable components from document flow so they take 0 height */
+  /* Completely remove non-printable components & externally injected widgets (Netlify, extensions, etc.) */
   .no-print,
-  .print\:hidden {
+  .print\:hidden,
+  [data-hidden-for-print="true"],
+  html > *:not(body),
+  body > *:not(#root),
+  netlify-drawer,
+  #netlify-drawer,
+  .netlify-drawer,
+  [id*="netlify" i],
+  [class*="netlify" i],
+  iframe[src*="netlify" i] {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* When invoice modal is open, hide everything in #root except the invoice modal */
+  body:has(.invoice-modal-overlay) #root > *:not(.invoice-modal-overlay),
+  body.printing-invoice-only #root > *:not(.invoice-modal-overlay) {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
   }
 
   /* Flatten modal containers so they act as standard document flow */

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWorkshop } from '../context/WorkshopContext';
 import { Invoice, PaymentStatus, InvoiceItem, PaperSize, TableBorderStyle } from '../types';
 import {
@@ -198,7 +198,8 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({ invoice, onC
 
   const pages = buildInvoicePages(invoice.items, paperSize);
 
-  const handlePrint = () => {
+  const hideExternalElementsForPrint = useCallback(() => {
+    document.body.classList.add('printing-invoice-only');
     if (paperSize === 'A5') {
       document.body.classList.add('paper-a5-mode');
       document.body.classList.remove('paper-a4-mode');
@@ -206,6 +207,67 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({ invoice, onC
       document.body.classList.add('paper-a4-mode');
       document.body.classList.remove('paper-a5-mode');
     }
+
+    const targets = new Set<HTMLElement>();
+    Array.from(document.body.children).forEach((child) => {
+      if (child instanceof HTMLElement && child.id !== 'root') {
+        targets.add(child);
+      }
+    });
+    document
+      .querySelectorAll('netlify-drawer, #netlify-drawer, .netlify-drawer, [id*="netlify" i], [class*="netlify" i], iframe[src*="netlify" i]')
+      .forEach((el) => {
+        if (el instanceof HTMLElement && el.id !== 'root' && !el.closest('.printable-invoice-container')) {
+          targets.add(el);
+        }
+      });
+
+    targets.forEach((el) => {
+      if (!el.hasAttribute('data-hidden-for-print')) {
+        el.setAttribute('data-prev-display', el.style.getPropertyValue('display') || '');
+        el.setAttribute('data-prev-visibility', el.style.getPropertyValue('visibility') || '');
+        el.setAttribute('data-hidden-for-print', 'true');
+        el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('visibility', 'hidden', 'important');
+      }
+    });
+  }, [paperSize]);
+
+  const restoreExternalElementsAfterPrint = useCallback(() => {
+    document.body.classList.remove('printing-invoice-only');
+    document.querySelectorAll('[data-hidden-for-print="true"]').forEach((el) => {
+      if (el instanceof HTMLElement) {
+        const prevDisplay = el.getAttribute('data-prev-display') || '';
+        const prevVisibility = el.getAttribute('data-prev-visibility') || '';
+        if (prevDisplay) {
+          el.style.setProperty('display', prevDisplay);
+        } else {
+          el.style.removeProperty('display');
+        }
+        if (prevVisibility) {
+          el.style.setProperty('visibility', prevVisibility);
+        } else {
+          el.style.removeProperty('visibility');
+        }
+        el.removeAttribute('data-prev-display');
+        el.removeAttribute('data-prev-visibility');
+        el.removeAttribute('data-hidden-for-print');
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('beforeprint', hideExternalElementsForPrint);
+    window.addEventListener('afterprint', restoreExternalElementsAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', hideExternalElementsForPrint);
+      window.removeEventListener('afterprint', restoreExternalElementsAfterPrint);
+      restoreExternalElementsAfterPrint();
+    };
+  }, [hideExternalElementsForPrint, restoreExternalElementsAfterPrint]);
+
+  const handlePrint = () => {
+    hideExternalElementsForPrint();
     window.print();
   };
 
@@ -733,7 +795,7 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({ invoice, onC
 
       {/* QUICK PAYMENT UPDATE MODAL (Without Payment Method) */}
       {showPaymentModal && (
-        <div className="fixed inset-0 z-60 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="no-print fixed inset-0 z-60 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
           <form
             onSubmit={handleSavePayment}
             className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 border border-slate-200"
