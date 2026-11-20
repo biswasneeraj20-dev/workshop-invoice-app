@@ -17,6 +17,7 @@ import {
   Lock,
 } from 'lucide-react';
 import workshopLogo from '../assets/images/workshop_logo_1794027071111.jpg';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   activeTab: 'billing' | 'invoices' | 'labor' | 'inventory' | 'settings';
@@ -168,6 +169,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>Supabase</span>
               </button>
             )}
+
+            {/* PWA Install Button */}
+            <PWAInstallButton />
 
             {/* Primary Action Button */}
             <button

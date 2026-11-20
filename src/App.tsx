@@ -18,6 +18,7 @@ import { SplashScreen } from './components/SplashScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { SubscriptionLockScreen } from './components/SubscriptionLockScreen';
 import { SupabaseConfigModal } from './components/SupabaseConfigModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { Invoice, LaborService } from './types';
 
 function WorkshopApp() {
@@ -188,6 +189,7 @@ export default function App() {
     <AuthProvider>
       <WorkshopProvider>
         <WorkshopApp />
+        <OfflineIndicator />
       </WorkshopProvider>
     </AuthProvider>
   );
